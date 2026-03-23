@@ -1,6 +1,6 @@
 # Alicia-D Leader ROS2 Driver
 
-> **⚠️ DEPRECATION NOTICE:** The original ROS1 version of this repository ([Alicia-D-Leader-ROS](https://github.com/yizhongzhang1989/Alicia-D-Leader-ROS)) is **deprecated and should no longer be used**. It relied on an outdated serial protocol (wrong baud rate, incorrect frame format, passive streaming instead of request-response) and is incompatible with current Alicia-D hardware. This repository is the actively maintained ROS2 Humble replacement.
+> **⚠️ DEPRECATION NOTICE:** The original ROS1 version of this repository ([Alicia-D-Leader-ROS](https://github.com/Synria-Robotics/Alicia-D-Leader-ROS)) is **deprecated and should no longer be used**. It relied on an outdated serial protocol (wrong baud rate, incorrect frame format, passive streaming instead of request-response) and is incompatible with current Alicia-D hardware. This repository is the actively maintained ROS2 Humble replacement.
 
 ## Overview
 
