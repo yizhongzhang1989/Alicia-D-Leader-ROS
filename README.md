@@ -126,6 +126,65 @@ float32 time      # reserved
 | `baudrate` | `1000000` | Serial baud rate. Must match hardware. |
 | `query_rate` | `200.0` | Joint state query rate in Hz. |
 | `debug_mode` | `false` | Enable verbose serial frame logging. |
+| `joint_config` | `""` (auto) | Path to a custom `joint_config.yaml`. Empty uses default (see below). |
+
+## Joint Configuration
+
+The leader arm's joints may differ from the real robot in direction, zero position, and rotation range. A YAML config file lets you adjust these per joint **in software**, without recalibrating the hardware.
+
+### Config file location
+
+```
+Alicia-D-Leader-ROS/
+  config/
+    joint_config_template.yaml   ← tracked in git, default values
+    joint_config.yaml            ← your customized copy (gitignored)
+```
+
+On first launch, if `config/joint_config.yaml` does not exist, the driver **automatically copies** the template to create it. Edit `config/joint_config.yaml` to customize — changes take effect on the next driver launch (no rebuild needed).
+
+### Config format
+
+```yaml
+joint_config:
+  joint1:
+    direction: 1.0       # 1.0 or -1.0 — flip rotation direction
+    zero_offset: 0.0     # radians — software zero point adjustment
+    continuous: false     # true = angle unwrapping (tracks beyond ±180°)
+
+  joint2:
+    direction: 1.0
+    zero_offset: 0.0
+    continuous: false
+
+  # ... joint3 through joint6 ...
+
+  gripper:
+    direction: 1.0
+    zero_offset: 0.0
+```
+
+### Settings explained
+
+| Setting | Values | Description |
+|---------|--------|-------------|
+| `direction` | `1.0` or `-1.0` | Set to `-1.0` if the leader arm joint rotates opposite to the real robot. Applied first. |
+| `zero_offset` | float (radians) | Added after direction flip. Use this to align the leader's neutral position with the robot's zero pose. For example, `1.5708` shifts the zero by 90°. |
+| `continuous` | `true` / `false` | When `true`, enables angle unwrapping — the output tracks cumulative rotation beyond ±π (±180°) instead of wrapping. Use for joints like wrist roll that can spin freely. The dashboard bar range also adjusts to ±360° for these joints. |
+
+The transform applied to each joint is:
+
+$$\theta_{out} = \text{direction} \times \theta_{unwrapped} + \text{zero\_offset}$$
+
+### Default values
+
+The template ships with joints 4, 5, 6 set to `direction: -1.0` and joint 6 set to `continuous: true`. Adjust as needed for your specific robot.
+
+### Using a custom config path
+
+```bash
+ros2 launch alicia_duo_leader_driver serial_server.launch.py joint_config:=/path/to/my_config.yaml
+```
 
 ## Serial Protocol
 
