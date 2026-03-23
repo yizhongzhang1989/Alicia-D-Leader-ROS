@@ -1,7 +1,7 @@
 # 标准机械臂关节状态消息 (弧度单位)
 # 所有关节角度使用弧度作为单位
 
-Header header
+std_msgs/Header header
 
 # 六个主要关节角度 (弧度)
 float32 joint1
