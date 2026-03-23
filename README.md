@@ -30,7 +30,7 @@ git clone https://github.com/Synria-Robotics/Alicia-D-Leader-ROS.git .
 ```bash
 cd ~/alicia_leader_ws
 source /opt/ros/humble/setup.bash
-colcon build --packages-select alicia_duo_leader_driver
+colcon build
 ```
 
 ### 3. Serial port permissions
@@ -137,9 +137,32 @@ The driver uses a request-response protocol matching the Alicia-D-SDK:
 - The device does **not** auto-stream. The driver sends a query command (`CMD=0x06, FUNC=0x00`) at the configured rate and parses the response.
 - Joint angles are 16-bit little-endian values (0–4095), mapped to radians: `θ = (value / 4096) × 2π − π`
 
+## Web Dashboard
+
+The `arm_joint_state_dashboard` package provides a real-time web-based dashboard that visualizes joint states in your browser.
+
+### Launch the dashboard
+
+```bash
+# Start the dashboard (default port 8080)
+ros2 launch arm_joint_state_dashboard dashboard.launch.py
+
+# Use a custom port
+ros2 launch arm_joint_state_dashboard dashboard.launch.py web_port:=8090
+```
+
+Then open `http://localhost:8080` (or your custom port) in a browser. The dashboard shows all 6 joint angles, gripper value, and run status with real-time updates via Server-Sent Events.
+
+### Dashboard launch parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `web_port` | `8080` | HTTP port for the web dashboard. |
+
 ## Troubleshooting
 
 - **No serial port found**: Check that the device is connected (`ls /dev/ttyACM* /dev/ttyUSB*`) and you have permissions (`groups $USER` should include `dialout`).
 - **No data on topics**: Ensure the device is powered on. The driver will log "Connected to /dev/ttyACM0" when the port opens successfully.
 - **Wrong baud rate**: The default is 1000000 (1 Mbps), matching the SDK. Older devices may use 921600.
 - **Debug mode**: Launch with `debug_mode:=true` to see raw TX/RX frames in the console.
+- **Dashboard not loading**: Make sure the driver is running and publishing to `/arm_joint_state` before opening the dashboard. Check that the port is not in use by another process.
