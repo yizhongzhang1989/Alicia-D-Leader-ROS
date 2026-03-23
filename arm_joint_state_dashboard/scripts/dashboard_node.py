@@ -14,6 +14,7 @@ import math
 import os
 import threading
 import time
+import yaml
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from functools import partial
 
@@ -48,6 +49,46 @@ class DashboardNode(Node):
         self._web_thread.start()
 
         self.get_logger().info(f'Dashboard running at http://localhost:{self.web_port}')
+
+        # Load joint config to know which joints are continuous
+        self._joint_continuous = [False] * 6
+        self._load_joint_config()
+
+    def _load_joint_config(self):
+        """Load continuous flags from joint config."""
+        try:
+            driver_share = get_package_share_directory('alicia_duo_leader_driver')
+            # Search order: workspace root config/, then installed share
+            ws_root = None
+            d = os.path.dirname(driver_share)
+            for _ in range(6):
+                d = os.path.dirname(d)
+                if os.path.isfile(os.path.join(d, 'config', 'joint_config_template.yaml')):
+                    ws_root = d
+                    break
+
+            candidates = []
+            if ws_root:
+                candidates.append(os.path.join(ws_root, 'config', 'joint_config.yaml'))
+                candidates.append(os.path.join(ws_root, 'config', 'joint_config_template.yaml'))
+            candidates.append(os.path.join(driver_share, 'config', 'joint_config.yaml'))
+            candidates.append(os.path.join(driver_share, 'config', 'joint_config_template.yaml'))
+
+            for path in candidates:
+                if os.path.isfile(path):
+                    with open(path, 'r') as f:
+                        cfg = yaml.safe_load(f)
+                    jc = cfg.get('joint_config', {})
+                    for i, name in enumerate(['joint1','joint2','joint3','joint4','joint5','joint6']):
+                        if name in jc:
+                            self._joint_continuous[i] = bool(jc[name].get('continuous', False))
+                    self.get_logger().info(f'Joint continuous flags: {self._joint_continuous}')
+                    return
+        except Exception as e:
+            self.get_logger().warn(f'Could not load joint config for dashboard: {e}')
+
+    def get_joint_config(self):
+        return {'continuous': self._joint_continuous}
 
     def _joint_state_cb(self, msg):
         state = {
@@ -120,6 +161,13 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(json.dumps(state or {}).encode())
+        elif self.path == '/api/config':
+            config = self._dashboard.get_joint_config()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(config).encode())
         elif self.path == '/api/events':
             self.send_response(200)
             self.send_header('Content-Type', 'text/event-stream')

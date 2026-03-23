@@ -103,6 +103,15 @@ const STATUS_MAP = {
 
 const JOINT_COLORS = ['#42a5f5','#66bb6a','#ffa726','#ef5350','#ab47bc','#26c6da'];
 
+// Joint config: continuous flags (loaded from server)
+let jointContinuous = [false, false, false, false, false, false];
+
+// Fetch joint config on load
+fetch('/api/config')
+  .then(r => r.json())
+  .then(cfg => { if (cfg.continuous) jointContinuous = cfg.continuous; })
+  .catch(() => {});
+
 // Build joint rows
 const jointsDiv = document.getElementById('joints');
 for (let i = 0; i < 6; i++) {
@@ -133,7 +142,8 @@ function updateUI(state) {
     document.getElementById(`rad${i}`).textContent = rad.toFixed(4) + ' rad';
 
     const bar = document.getElementById(`bar${i}`);
-    const pct = Math.min(Math.abs(deg) / 180 * 50, 50);
+    const maxDeg = jointContinuous[i] ? 360 : 180;
+    const pct = Math.min(Math.abs(deg) / maxDeg * 50, 50);
     bar.style.width = pct + '%';
     bar.className = 'joint-bar ' + (deg >= 0 ? 'positive' : 'negative');
     bar.style.background = `linear-gradient(${deg >= 0 ? '90deg' : '270deg'}, ${JOINT_COLORS[i]}88, ${JOINT_COLORS[i]})`;
