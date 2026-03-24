@@ -50,6 +50,31 @@
     .grid { grid-template-columns: 1fr; }
     .joint-value { width: 90px; }
   }
+
+  #viewer3d {
+    width: 100%;
+    height: 400px;
+    border-radius: 8px;
+    background: #0a1018;
+    display: block;
+    min-width: 300px;
+    border: none;
+  }
+  #viewer-loading {
+    text-align: center;
+    padding: 40px;
+    color: #78909c;
+  }
+  .viewer-spinner {
+    border: 3px solid rgba(79, 195, 247, 0.15);
+    border-top: 3px solid #4fc3f7;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -71,6 +96,13 @@
     <div class="card" style="grid-column: 1 / -1;">
       <div class="card-title">Joint Angles (Raw — from sensor)</div>
       <div id="jointsRaw"></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card" style="grid-column: 1 / -1;">
+      <div class="card-title">3D Model (Raw Angles)</div>
+      <iframe id="viewer3d" src="/viewer.html"></iframe>
     </div>
   </div>
 
@@ -177,7 +209,7 @@ function updateUI(state) {
   document.getElementById('gripperValue').textContent = state.gripper.toFixed(0);
   document.getElementById('gripperBar').style.width = (state.gripper / 1000 * 100) + '%';
 
-  // Raw joints
+  // Raw joint radians for 3D viewer (updated from SSE)
   if (state.raw) {
     for (let i = 0; i < 6; i++) {
       const deg = state.raw.joints[i];
@@ -190,6 +222,14 @@ function updateUI(state) {
       bar.style.width = pct + '%';
       bar.className = 'joint-bar ' + (deg >= 0 ? 'positive' : 'negative');
       bar.style.background = `linear-gradient(${deg >= 0 ? '90deg' : '270deg'}, ${JOINT_COLORS[i]}88, ${JOINT_COLORS[i]})`;
+    }
+    // Send raw joint angles to 3D viewer iframe
+    const viewerFrame = document.getElementById('viewer3d');
+    if (viewerFrame && viewerFrame.contentWindow) {
+      viewerFrame.contentWindow.postMessage({
+        type: 'joint_update',
+        joints_rad: state.raw.joints_rad
+      }, '*');
     }
   }
 

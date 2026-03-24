@@ -11,6 +11,7 @@ from alicia_duo_leader_driver.msg import ArmJointState
 
 import json
 import math
+import mimetypes
 import os
 import threading
 import time
@@ -19,6 +20,12 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from functools import partial
 
 RAD_TO_DEG = 180.0 / math.pi
+
+# Register MIME types for robot files
+mimetypes.add_type('application/octet-stream', '.stl')
+mimetypes.add_type('application/octet-stream', '.STL')
+mimetypes.add_type('application/xml', '.urdf')
+mimetypes.add_type('application/javascript', '.js')
 
 
 class DashboardNode(Node):
@@ -57,6 +64,11 @@ class DashboardNode(Node):
         self._joint_continuous = [False] * 6
         self._load_joint_config()
 
+        # Load URDF from alicia_d_description package for web serving
+        self._urdf_web_content = None
+        self._mesh_dir = None
+        self._load_urdf_for_web()
+
     def _load_joint_config(self):
         """Load continuous flags from joint config."""
         try:
@@ -92,6 +104,48 @@ class DashboardNode(Node):
 
     def get_joint_config(self):
         return {'continuous': self._joint_continuous}
+
+    def _load_urdf_for_web(self):
+        """Load URDF from alicia_d_description and prepare for web serving."""
+        try:
+            desc_share = get_package_share_directory('alicia_d_description')
+            urdf_path = os.path.join(desc_share, 'urdf', 'Alicia_D_v5_6_leader_ur.urdf')
+            mesh_dir = os.path.join(desc_share, 'meshes', 'leader_ur')
+
+            if not os.path.isfile(urdf_path):
+                self.get_logger().warn(f'URDF not found: {urdf_path}')
+                return
+
+            with open(urdf_path, 'r') as f:
+                urdf_content = f.read()
+
+            # Replace package:// URIs with relative web paths
+            # package://alicia_d_description/meshes/leader_ur/X.STL -> meshes/X.STL
+            urdf_content = urdf_content.replace(
+                'package://alicia_d_description/meshes/leader_ur/', 'meshes/')
+
+            # Remove mujoco tag (has stale meshdir paths, not needed for web viewer)
+            import re
+            urdf_content = re.sub(r'\s*<mujoco>.*?</mujoco>\s*', '\n', urdf_content, flags=re.DOTALL)
+
+            self._urdf_web_content = urdf_content
+            self._mesh_dir = mesh_dir
+            self.get_logger().info(f'URDF loaded for web from {urdf_path}')
+            self.get_logger().info(f'Mesh dir: {mesh_dir}')
+        except Exception as e:
+            self.get_logger().error(f'Failed to load URDF for web: {e}')
+
+    def get_urdf_content(self):
+        return self._urdf_web_content
+
+    def get_mesh_path(self, filename):
+        """Return full path to a mesh file, or None."""
+        if not self._mesh_dir:
+            return None
+        path = os.path.join(self._mesh_dir, filename)
+        if os.path.isfile(path):
+            return path
+        return None
 
     def _joint_state_raw_cb(self, msg):
         raw = {
@@ -212,6 +266,36 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 pass
             finally:
                 self._dashboard.unregister_sse_client(self.wfile)
+        elif self.path == '/robot/model.urdf':
+            # Serve URDF with web-friendly mesh paths
+            content = self._dashboard.get_urdf_content()
+            if content:
+                data = content.encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/xml')
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_error(404, 'URDF not loaded')
+        elif self.path.startswith('/robot/meshes/'):
+            # Serve mesh files from alicia_d_description package
+            filename = self.path.split('/robot/meshes/')[-1]
+            # Sanitize: only allow simple filenames (no path traversal)
+            if '/' in filename or '..' in filename:
+                self.send_error(403)
+                return
+            mesh_path = self._dashboard.get_mesh_path(filename)
+            if mesh_path:
+                with open(mesh_path, 'rb') as f:
+                    data = f.read()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/octet-stream')
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_error(404, f'Mesh not found: {filename}')
         else:
             super().do_GET()
 
