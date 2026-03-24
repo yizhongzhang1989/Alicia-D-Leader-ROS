@@ -1,17 +1,16 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>arm_joint_state_dashboard</name>
+  <name>alicia_duo_leader_dashboard</name>
   <version>1.0.0</version>
-  <description>Web-based dashboard for visualizing Alicia-D arm joint states</description>
+  <description>Web dashboard with 3D URDF viewer for Alicia-D Leader arm</description>
   <maintainer email="user@example.com">User</maintainer>
   <license>BSD</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>rclpy</depend>
-  <depend>std_msgs</depend>
-  <depend>alicia_duo_leader_driver</depend>
+  <exec_depend>alicia_duo_leader_driver</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

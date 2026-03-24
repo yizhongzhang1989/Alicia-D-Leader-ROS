@@ -14,6 +14,11 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 )
 
 # 安装Python节点
+file(GLOB PYTHON_SCRIPTS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.py")
+foreach(script ${PYTHON_SCRIPTS})
+  execute_process(COMMAND chmod +x "${script}")
+endforeach()
+
 install(PROGRAMS
   scripts/alicia_driver_node.py
   scripts/arm_read_demo.py

@@ -9,9 +9,9 @@ def generate_launch_description():
         'web_port', default_value='8080', description='Web dashboard port')
 
     dashboard_node = Node(
-        package='arm_joint_state_dashboard',
+        package='alicia_duo_leader_dashboard',
         executable='dashboard_node.py',
-        name='arm_joint_state_dashboard',
+        name='alicia_duo_leader_dashboard',
         output='screen',
         parameters=[{
             'port': LaunchConfiguration('web_port'),
