@@ -76,22 +76,6 @@ Or run the demo script:
 ros2 run alicia_duo_leader_driver arm_read_demo.py
 ```
 
-### Zero calibration
-
-```bash
-ros2 topic pub --once /zero_calibrate std_msgs/msg/Bool "data: true"
-```
-
-### Torque enable/disable
-
-```bash
-# Enable torque
-ros2 topic pub --once /torque_enable std_msgs/msg/Bool "data: true"
-
-# Disable torque
-ros2 topic pub --once /torque_enable std_msgs/msg/Bool "data: false"
-```
-
 ## Topics
 
 | Topic | Type | Description |
@@ -100,8 +84,6 @@ ros2 topic pub --once /torque_enable std_msgs/msg/Bool "data: false"
 | `/arm_joint_state_raw` | `alicia_duo_leader_driver/msg/ArmJointState` | **Raw sensor angles** (±π, as-is from hardware). For URDF visualization. ~200 Hz. |
 | `/servo_states_main` | `std_msgs/msg/Float32MultiArray` | Transformed joint angles + gripper as a flat array `[j1, j2, j3, j4, j5, j6, gripper]`. |
 | `/read_serial_data` | `std_msgs/msg/UInt8MultiArray` | Raw serial frames for debugging. |
-| `/zero_calibrate` | `std_msgs/msg/Bool` | Send `True` to set current position as zero. |
-| `/torque_enable` | `std_msgs/msg/Bool` | Send `True`/`False` to enable/disable torque. |
 
 ## Message: ArmJointState
 
@@ -199,25 +181,42 @@ The driver uses a request-response protocol matching the Alicia-D-SDK:
 
 ## Web Dashboard
 
-The `arm_joint_state_dashboard` package provides a real-time web-based dashboard that visualizes joint states in your browser.
+The `alicia_duo_leader_dashboard` package provides a real-time web dashboard with:
+
+- **3D URDF viewer** — interactive 3D model driven by raw joint angles, with orbit/zoom controls
+- **Transformed joint bars** — shows joint angles after direction, offset, and unwrap transforms (for robot control)
+- **Raw joint bars** — shows raw sensor angles with URDF joint limit ranges
+- **Gripper value**, **run status**, and **update rate** display
+- Real-time updates via Server-Sent Events (~200 Hz)
 
 ### Launch the dashboard
 
 ```bash
 # Start the dashboard (default port 8080)
-ros2 launch arm_joint_state_dashboard dashboard.launch.py
+ros2 launch alicia_duo_leader_dashboard dashboard.launch.py
 
 # Use a custom port
-ros2 launch arm_joint_state_dashboard dashboard.launch.py web_port:=8090
+ros2 launch alicia_duo_leader_dashboard dashboard.launch.py web_port:=8090
 ```
 
-Then open `http://localhost:8080` (or your custom port) in a browser. The dashboard shows all 6 joint angles, gripper value, and run status with real-time updates via Server-Sent Events.
+Then open `http://<machine-ip>:<port>` in a browser.
 
 ### Dashboard launch parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `web_port` | `8080` | HTTP port for the web dashboard. |
+
+### URDF Visualization (RViz)
+
+The URDF model and meshes are bundled in the dashboard package at `static/robot/`. For standalone RViz visualization, you can use the URDF from the [Synria-Robot-Descriptions](https://github.com/Synria-Robotics/Synria-Robot-Descriptions) repository.
+
+## Packages
+
+| Package | Description |
+|---------|-------------|
+| `alicia_duo_leader_driver` | Serial driver node, joint state publishing, joint config transforms |
+| `alicia_duo_leader_dashboard` | Web dashboard with 3D URDF viewer and joint state display |
 
 ## Troubleshooting
 
