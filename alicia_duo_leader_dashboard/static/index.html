@@ -25,10 +25,10 @@
             display: flex; align-items: center; margin-bottom: 6px;
             padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
         }
-        .joint-label { width: 55px; font-size: 12px; color: #b0bec5; font-weight: 500; }
+        .joint-label { width: 28px; font-size: 12px; color: #b0bec5; font-weight: 500; }
         .joint-bar-bg {
             flex: 1; height: 20px; background: #0f1923; border-radius: 4px;
-            position: relative; overflow: hidden; margin: 0 8px;
+            position: relative; overflow: hidden; margin: 0 4px;
         }
         .joint-bar {
             height: 100%; border-radius: 4px;
@@ -41,7 +41,7 @@
             width: 1px; background: #37474f; z-index: 2;
         }
         .joint-val {
-            width: 90px; text-align: right; font-size: 12px;
+            width: 70px; text-align: right; font-size: 11px;
             font-family: 'Consolas', monospace; color: #4fc3f7;
         }
         .info-row {
@@ -205,9 +205,27 @@
         let msgCount = 0, lastRateTime = performance.now(), lastRate = 0;
         let rawJointRad = null;
 
-        function updateBar(prefix, idx, deg) {
+        // Joint ranges (loaded from server config)
+        // Transformed: ±180 for non-continuous, ±360 for continuous
+        let tRanges = [180, 180, 180, 180, 180, 180];
+        // Raw: from URDF joint limits (degrees)
+        let rRanges = [[-180,180],[-180,180],[-180,180],[-180,180],[-180,180],[-180,180]];
+
+        // Fetch config on load
+        fetch('/api/config').then(r => r.json()).then(cfg => {
+            if (cfg.continuous) {
+                for (let i = 0; i < 6; i++)
+                    tRanges[i] = cfg.continuous[i] ? 360 : 180;
+            }
+            if (cfg.urdf_limits_deg) {
+                rRanges = cfg.urdf_limits_deg;
+            }
+            console.log('Transformed ranges (deg):', tRanges, 'Raw URDF limits:', rRanges);
+        }).catch(() => {});
+
+        function updateBar(prefix, idx, deg, rangeDeg) {
             const bar = document.getElementById(`${prefix}bar${idx}`);
-            const pct = Math.min(Math.abs(deg) / 180 * 50, 50);
+            const pct = Math.min(Math.abs(deg) / rangeDeg * 50, 50);
             bar.style.width = pct + '%';
             bar.className = 'joint-bar ' + (deg >= 0 ? 'positive' : 'negative');
             bar.style.background = `linear-gradient(${deg >= 0 ? '90deg' : '270deg'}, ${COLORS[idx]}88, ${COLORS[idx]})`;
@@ -215,9 +233,13 @@
         }
 
         function onState(state) {
-            for (let i = 0; i < 6; i++) updateBar('t', i, state.joints[i]);
+            for (let i = 0; i < 6; i++) updateBar('t', i, state.joints[i], tRanges[i]);
             if (state.raw) {
-                for (let i = 0; i < 6; i++) updateBar('r', i, state.raw.joints[i]);
+                for (let i = 0; i < 6; i++) {
+                    // Raw bar range = max of abs(lower) and abs(upper) from URDF
+                    const rawRange = Math.max(Math.abs(rRanges[i][0]), Math.abs(rRanges[i][1]));
+                    updateBar('r', i, state.raw.joints[i], rawRange);
+                }
                 rawJointRad = state.raw.joints_rad;
             }
             document.getElementById('gripperVal').textContent = state.gripper.toFixed(0);

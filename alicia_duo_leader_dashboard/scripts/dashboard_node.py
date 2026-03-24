@@ -15,6 +15,8 @@ import mimetypes
 import os
 import threading
 import time
+import yaml
+import xml.etree.ElementTree as ET
 from functools import partial
 
 # Register MIME types
@@ -64,6 +66,13 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(json.dumps(state or {}).encode())
+        elif self.path == '/api/config':
+            config = self._dashboard.get_config()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(config).encode())
         else:
             super().do_GET()
 
@@ -108,6 +117,70 @@ class DashboardNode(Node):
         self._web_thread.start()
 
         self.get_logger().info(f'Dashboard: http://localhost:{web_port}')
+
+        # Load joint config and URDF limits
+        self._joint_continuous = [False] * 6
+        self._urdf_limits_deg = [[-180, 180]] * 6  # [lower, upper] in degrees
+        self._load_joint_config()
+        self._load_urdf_limits(static_dir)
+
+    def _load_joint_config(self):
+        """Load continuous flags from joint config."""
+        try:
+            driver_share = get_package_share_directory('alicia_duo_leader_driver')
+            ws_root = None
+            d = os.path.dirname(driver_share)
+            for _ in range(6):
+                d = os.path.dirname(d)
+                if os.path.isfile(os.path.join(d, 'config', 'joint_config_template.yaml')):
+                    ws_root = d
+                    break
+            candidates = []
+            if ws_root:
+                candidates.append(os.path.join(ws_root, 'config', 'joint_config.yaml'))
+                candidates.append(os.path.join(ws_root, 'config', 'joint_config_template.yaml'))
+            candidates.append(os.path.join(driver_share, 'config', 'joint_config.yaml'))
+            candidates.append(os.path.join(driver_share, 'config', 'joint_config_template.yaml'))
+            for path in candidates:
+                if os.path.isfile(path):
+                    with open(path, 'r') as f:
+                        cfg = yaml.safe_load(f)
+                    jc = cfg.get('joint_config', {})
+                    for i, name in enumerate(['joint1','joint2','joint3','joint4','joint5','joint6']):
+                        if name in jc:
+                            self._joint_continuous[i] = bool(jc[name].get('continuous', False))
+                    self.get_logger().info(f'Joint continuous: {self._joint_continuous}')
+                    return
+        except Exception as e:
+            self.get_logger().warn(f'Could not load joint config: {e}')
+
+    def _load_urdf_limits(self, static_dir):
+        """Load joint limits from URDF file."""
+        try:
+            urdf_path = os.path.join(static_dir, 'robot', 'model.urdf')
+            if not os.path.isfile(urdf_path):
+                return
+            tree = ET.parse(urdf_path)
+            root = tree.getroot()
+            joint_names = ['joint1','joint2','joint3','joint4','joint5','joint6']
+            for joint_el in root.findall('joint'):
+                name = joint_el.get('name')
+                if name in joint_names:
+                    idx = joint_names.index(name)
+                    limit_el = joint_el.find('limit')
+                    if limit_el is not None:
+                        lower = float(limit_el.get('lower', '-3.14159'))
+                        upper = float(limit_el.get('upper', '3.14159'))
+                        self._urdf_limits_deg[idx] = [round(lower * RAD_TO_DEG, 1), round(upper * RAD_TO_DEG, 1)]
+            self.get_logger().info(f'URDF joint limits (deg): {self._urdf_limits_deg}')
+        except Exception as e:
+            self.get_logger().warn(f'Could not load URDF limits: {e}')
+
+    def get_config(self):
+        return {
+            'continuous': self._joint_continuous,
+            'urdf_limits_deg': self._urdf_limits_deg,
+        }
 
     def _cb_raw(self, msg):
         with self._lock:
