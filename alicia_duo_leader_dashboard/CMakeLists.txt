@@ -3,6 +3,11 @@ project(alicia_duo_leader_dashboard)
 
 find_package(ament_cmake REQUIRED)
 
+file(GLOB PYTHON_SCRIPTS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.py")
+foreach(script ${PYTHON_SCRIPTS})
+  execute_process(COMMAND chmod +x "${script}")
+endforeach()
+
 install(PROGRAMS
   scripts/dashboard_node.py
   DESTINATION lib/${PROJECT_NAME}
