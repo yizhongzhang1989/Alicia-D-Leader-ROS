@@ -84,6 +84,7 @@ class AliciaDriverNode(Node):
 
         # Publishers
         self.joint_state_pub = self.create_publisher(ArmJointState, '/arm_joint_state', 10)
+        self.joint_state_raw_pub = self.create_publisher(ArmJointState, '/arm_joint_state_raw', 10)
         self.array_pub = self.create_publisher(Float32MultiArray, '/servo_states_main', 10)
         self.raw_pub = self.create_publisher(UInt8MultiArray, '/read_serial_data', 10)
 
@@ -467,16 +468,32 @@ class AliciaDriverNode(Node):
         joint_values = self._apply_joint_transform(raw_joint_values)
 
         # Parse gripper (2 bytes, little-endian) - raw value 0-1000
-        gripper_raw = (data_bytes[12] & 0xFF) | ((data_bytes[13] & 0xFF) << 8)
-        gripper_value = max(0, min(1000, gripper_raw))
+        gripper_raw_value = (data_bytes[12] & 0xFF) | ((data_bytes[13] & 0xFF) << 8)
+        gripper_value = max(0, min(1000, gripper_raw_value))
         gripper_value = self._gripper_direction * gripper_value + self._gripper_zero_offset
 
         # Parse run status
         run_status = data_bytes[14] if len(data_bytes) > 14 else 0
 
-        # Publish ArmJointState
+        now_stamp = self.get_clock().now().to_msg()
+
+        # Publish raw (untransformed) joint state — for URDF visualization
+        raw_msg = ArmJointState()
+        raw_msg.header.stamp = now_stamp
+        raw_msg.joint1 = raw_joint_values[0]
+        raw_msg.joint2 = raw_joint_values[1]
+        raw_msg.joint3 = raw_joint_values[2]
+        raw_msg.joint4 = raw_joint_values[3]
+        raw_msg.joint5 = raw_joint_values[4]
+        raw_msg.joint6 = raw_joint_values[5]
+        raw_msg.gripper = float(max(0, min(1000, gripper_raw_value)))
+        raw_msg.but1 = run_status
+        raw_msg.but2 = 0
+        self.joint_state_raw_pub.publish(raw_msg)
+
+        # Publish transformed joint state — for robot control
         msg = ArmJointState()
-        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.stamp = now_stamp
         msg.joint1 = joint_values[0]
         msg.joint2 = joint_values[1]
         msg.joint3 = joint_values[2]

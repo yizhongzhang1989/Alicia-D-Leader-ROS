@@ -62,8 +62,15 @@
 <div class="container">
   <div class="grid">
     <div class="card" style="grid-column: 1 / -1;">
-      <div class="card-title">Joint Angles</div>
+      <div class="card-title">Joint Angles (Transformed — for robot control)</div>
       <div id="joints"></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card" style="grid-column: 1 / -1;">
+      <div class="card-title">Joint Angles (Raw — from sensor)</div>
+      <div id="jointsRaw"></div>
     </div>
   </div>
 
@@ -129,6 +136,23 @@ for (let i = 0; i < 6; i++) {
     </div>`;
 }
 
+// Build raw joint rows
+const jointsRawDiv = document.getElementById('jointsRaw');
+for (let i = 0; i < 6; i++) {
+  jointsRawDiv.innerHTML += `
+    <div class="joint-row">
+      <div class="joint-label" style="color:${JOINT_COLORS[i]}">Joint ${i+1}</div>
+      <div class="joint-bar-bg">
+        <div class="joint-center"></div>
+        <div class="joint-bar" id="rawbar${i}" style="width:0%"></div>
+      </div>
+      <div class="joint-value">
+        <span class="deg" id="rawdeg${i}">0.00°</span><br>
+        <span class="rad" id="rawrad${i}">0.0000 rad</span>
+      </div>
+    </div>`;
+}
+
 let msgCount = 0;
 let lastRateTime = performance.now();
 let lastRate = 0;
@@ -152,6 +176,22 @@ function updateUI(state) {
   // Gripper
   document.getElementById('gripperValue').textContent = state.gripper.toFixed(0);
   document.getElementById('gripperBar').style.width = (state.gripper / 1000 * 100) + '%';
+
+  // Raw joints
+  if (state.raw) {
+    for (let i = 0; i < 6; i++) {
+      const deg = state.raw.joints[i];
+      const rad = state.raw.joints_rad[i];
+      document.getElementById(`rawdeg${i}`).textContent = deg.toFixed(2) + '°';
+      document.getElementById(`rawrad${i}`).textContent = rad.toFixed(4) + ' rad';
+
+      const bar = document.getElementById(`rawbar${i}`);
+      const pct = Math.min(Math.abs(deg) / 180 * 50, 50);
+      bar.style.width = pct + '%';
+      bar.className = 'joint-bar ' + (deg >= 0 ? 'positive' : 'negative');
+      bar.style.background = `linear-gradient(${deg >= 0 ? '90deg' : '270deg'}, ${JOINT_COLORS[i]}88, ${JOINT_COLORS[i]})`;
+    }
+  }
 
   // Status
   const statusCode = state.status;

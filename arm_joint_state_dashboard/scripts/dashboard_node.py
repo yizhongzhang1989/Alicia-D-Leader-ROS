@@ -31,12 +31,15 @@ class DashboardNode(Node):
         self.web_host = self.get_parameter('host').value
 
         self._latest_state = None
+        self._latest_raw_state = None
         self._lock = threading.Lock()
         self._sse_clients = []
         self._sse_lock = threading.Lock()
 
         self.create_subscription(
             ArmJointState, '/arm_joint_state', self._joint_state_cb, 10)
+        self.create_subscription(
+            ArmJointState, '/arm_joint_state_raw', self._joint_state_raw_cb, 10)
 
         # Serve static files from package share directory
         pkg_share = get_package_share_directory('arm_joint_state_dashboard')
@@ -90,6 +93,29 @@ class DashboardNode(Node):
     def get_joint_config(self):
         return {'continuous': self._joint_continuous}
 
+    def _joint_state_raw_cb(self, msg):
+        raw = {
+            'joints': [
+                round(msg.joint1 * RAD_TO_DEG, 2),
+                round(msg.joint2 * RAD_TO_DEG, 2),
+                round(msg.joint3 * RAD_TO_DEG, 2),
+                round(msg.joint4 * RAD_TO_DEG, 2),
+                round(msg.joint5 * RAD_TO_DEG, 2),
+                round(msg.joint6 * RAD_TO_DEG, 2),
+            ],
+            'joints_rad': [
+                round(msg.joint1, 4),
+                round(msg.joint2, 4),
+                round(msg.joint3, 4),
+                round(msg.joint4, 4),
+                round(msg.joint5, 4),
+                round(msg.joint6, 4),
+            ],
+            'gripper': round(msg.gripper, 1),
+        }
+        with self._lock:
+            self._latest_raw_state = raw
+
     def _joint_state_cb(self, msg):
         state = {
             'joints': [
@@ -115,9 +141,12 @@ class DashboardNode(Node):
 
         with self._lock:
             self._latest_state = state
+            combined = dict(state)
+            if self._latest_raw_state:
+                combined['raw'] = self._latest_raw_state
 
         # Push to SSE clients
-        data_str = json.dumps(state)
+        data_str = json.dumps(combined)
         with self._sse_lock:
             dead = []
             for client_wfile in self._sse_clients:
