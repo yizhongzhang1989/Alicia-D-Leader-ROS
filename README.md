@@ -96,8 +96,9 @@ ros2 topic pub --once /torque_enable std_msgs/msg/Bool "data: false"
 
 | Topic | Type | Description |
 |-------|------|-------------|
-| `/arm_joint_state` | `alicia_duo_leader_driver/msg/ArmJointState` | **Main output.** 6 joint angles (radians), gripper value (0–1000), run status. Published at ~200 Hz. |
-| `/servo_states_main` | `std_msgs/msg/Float32MultiArray` | Joint angles + gripper as a flat array `[j1, j2, j3, j4, j5, j6, gripper]`. |
+| `/arm_joint_state` | `alicia_duo_leader_driver/msg/ArmJointState` | **Main output.** Transformed joint angles (direction, offset, unwrap applied). For robot control. ~200 Hz. |
+| `/arm_joint_state_raw` | `alicia_duo_leader_driver/msg/ArmJointState` | **Raw sensor angles** (±π, as-is from hardware). For URDF visualization. ~200 Hz. |
+| `/servo_states_main` | `std_msgs/msg/Float32MultiArray` | Transformed joint angles + gripper as a flat array `[j1, j2, j3, j4, j5, j6, gripper]`. |
 | `/read_serial_data` | `std_msgs/msg/UInt8MultiArray` | Raw serial frames for debugging. |
 | `/zero_calibrate` | `std_msgs/msg/Bool` | Send `True` to set current position as zero. |
 | `/torque_enable` | `std_msgs/msg/Bool` | Send `True`/`False` to enable/disable torque. |
