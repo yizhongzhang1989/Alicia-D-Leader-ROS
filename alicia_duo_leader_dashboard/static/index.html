@@ -139,7 +139,7 @@
 
         const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.001, 100);
         camera.up.set(0, 0, 1);
-        camera.position.set(0.5, -0.5, 0.4);
+        camera.position.set(0.8, -0.8, 0.6);
 
         const canvas = document.getElementById('viewer');
         const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -188,20 +188,6 @@
                     child.castShadow = true; child.receiveShadow = true;
                 }
             });
-
-            // Auto-fit camera to robot
-            const box = new THREE.Box3().setFromObject(robot);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
-            const maxDim = Math.max(size.x, size.y, size.z);
-
-            controls.target.copy(center);
-            camera.position.set(
-                center.x + maxDim * 1.5,
-                center.y - maxDim * 1.5,
-                center.z + maxDim * 1.0
-            );
-            controls.update();
 
             document.getElementById('loading').style.display = 'none';
             document.getElementById('panel').style.display = 'block';
