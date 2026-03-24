@@ -166,10 +166,21 @@ class AliciaDriverNode(Node):
             except Exception:
                 self.get_logger().warn('Could not find default joint config, using identity mapping')
                 return
-
-        if not os.path.isfile(config_path):
-            self.get_logger().warn(f'Joint config not found: {config_path}, using identity mapping')
-            return
+        elif not os.path.isfile(config_path):
+            # Parameter provided but file doesn't exist — auto-copy template
+            try:
+                pkg_share = get_package_share_directory('alicia_duo_leader_driver')
+                template_cfg = os.path.join(pkg_share, 'config', 'joint_config_template.yaml')
+                if os.path.isfile(template_cfg):
+                    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+                    shutil.copy2(template_cfg, config_path)
+                    self.get_logger().info(f'Created {config_path} from template — edit this file to configure joints')
+                else:
+                    self.get_logger().warn(f'Joint config not found: {config_path} and template missing')
+                    return
+            except Exception as e:
+                self.get_logger().warn(f'Failed to create config at {config_path}: {e}')
+                return
 
         try:
             with open(config_path, 'r') as f:
