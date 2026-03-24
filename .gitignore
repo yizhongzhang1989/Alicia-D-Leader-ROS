@@ -20,4 +20,7 @@ catkin_generated/
 .vscode/
 .idea/
 *.swp
+
+# User joint config (use joint_config_template.yaml as starting point)
+config/joint_config.yaml
 *.swo

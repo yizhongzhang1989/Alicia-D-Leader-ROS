@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>arm_joint_state_dashboard</name>
+  <version>1.0.0</version>
+  <description>Web-based dashboard for visualizing Alicia-D arm joint states</description>
+  <maintainer email="user@example.com">User</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>alicia_duo_leader_driver</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

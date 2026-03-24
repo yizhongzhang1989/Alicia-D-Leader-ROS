@@ -14,6 +14,9 @@ def generate_launch_description():
         'baudrate', default_value='1000000', description='Serial baudrate')
     query_rate_arg = DeclareLaunchArgument(
         'query_rate', default_value='200.0', description='Joint state query rate (Hz)')
+    joint_config_arg = DeclareLaunchArgument(
+        'joint_config', default_value='',
+        description='Path to joint_config.yaml. Empty uses default from package.')
 
     # Single driver node
     driver_node = Node(
@@ -26,6 +29,7 @@ def generate_launch_description():
             'baudrate': LaunchConfiguration('baudrate'),
             'port': LaunchConfiguration('port'),
             'query_rate': LaunchConfiguration('query_rate'),
+            'joint_config': LaunchConfiguration('joint_config'),
         }],
     )
 
@@ -34,5 +38,6 @@ def generate_launch_description():
         port_arg,
         baudrate_arg,
         query_rate_arg,
+        joint_config_arg,
         driver_node,
     ])

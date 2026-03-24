@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alicia-D Arm Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1923; color: #e0e0e0; min-height: 100vh; }
+
+  .header { background: #1a2733; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #2a3a4a; }
+  .header h1 { font-size: 20px; font-weight: 600; color: #4fc3f7; }
+  .status-badge { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .status-badge.connected { background: #1b5e20; color: #66bb6a; }
+  .status-badge.disconnected { background: #4a1010; color: #ef5350; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-bottom: 24px; }
+
+  .card { background: #1a2733; border-radius: 12px; padding: 20px; border: 1px solid #2a3a4a; }
+  .card-title { font-size: 14px; color: #78909c; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
+
+  .joint-row { display: flex; align-items: center; margin-bottom: 12px; }
+  .joint-label { width: 70px; font-size: 13px; color: #90a4ae; font-weight: 500; }
+  .joint-bar-bg { flex: 1; height: 28px; background: #0f1923; border-radius: 6px; position: relative; overflow: hidden; margin: 0 12px; }
+  .joint-bar { height: 100%; border-radius: 6px; transition: width 0.08s ease-out; position: absolute; top: 0; }
+  .joint-bar.positive { background: linear-gradient(90deg, #1565c0, #42a5f5); left: 50%; }
+  .joint-bar.negative { background: linear-gradient(270deg, #c62828, #ef5350); right: 50%; }
+  .joint-center { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: #37474f; z-index: 2; }
+  .joint-value { width: 110px; text-align: right; font-size: 14px; font-family: 'Consolas', monospace; }
+  .joint-value .deg { color: #4fc3f7; font-weight: 600; }
+  .joint-value .rad { color: #78909c; font-size: 11px; }
+
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .info-item { text-align: center; background: #0f1923; border-radius: 8px; padding: 16px; }
+  .info-label { font-size: 11px; color: #78909c; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .info-value { font-size: 28px; font-weight: 700; font-family: 'Consolas', monospace; }
+  .info-value.gripper { color: #66bb6a; }
+  .info-value.status { color: #ffa726; }
+  .info-value.rate { color: #4fc3f7; }
+  .info-value.time { color: #ce93d8; }
+
+  .gripper-bar-bg { width: 100%; height: 12px; background: #1a2733; border-radius: 6px; margin-top: 8px; overflow: hidden; }
+  .gripper-bar { height: 100%; background: linear-gradient(90deg, #2e7d32, #66bb6a); border-radius: 6px; transition: width 0.08s ease-out; }
+
+  .status-map { font-size: 11px; color: #78909c; margin-top: 4px; }
+
+  @media (max-width: 768px) {
+    .grid { grid-template-columns: 1fr; }
+    .joint-value { width: 90px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Alicia-D Arm Dashboard</h1>
+  <span id="connStatus" class="status-badge disconnected">DISCONNECTED</span>
+</div>
+
+<div class="container">
+  <div class="grid">
+    <div class="card" style="grid-column: 1 / -1;">
+      <div class="card-title">Joint Angles</div>
+      <div id="joints"></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">Gripper</div>
+      <div class="info-item" style="background:transparent; padding:8px 0;">
+        <div class="info-value gripper" id="gripperValue">--</div>
+        <div class="info-label">Raw Value (0–1000)</div>
+        <div class="gripper-bar-bg"><div class="gripper-bar" id="gripperBar" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">System Info</div>
+      <div class="info-grid">
+        <div class="info-item">
+          <div class="info-label">Run Status</div>
+          <div class="info-value status" id="statusValue">--</div>
+          <div class="status-map" id="statusText"></div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Update Rate</div>
+          <div class="info-value rate" id="rateValue">--</div>
+          <div class="status-map">Hz</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const STATUS_MAP = {
+  0: 'idle', 1: 'locked', 16: 'sync', 17: 'sync_locked',
+  225: 'overheat', 226: 'overheat_protect'
+};
+
+const JOINT_COLORS = ['#42a5f5','#66bb6a','#ffa726','#ef5350','#ab47bc','#26c6da'];
+
+// Joint config: continuous flags (loaded from server)
+let jointContinuous = [false, false, false, false, false, false];
+
+// Fetch joint config on load
+fetch('/api/config')
+  .then(r => r.json())
+  .then(cfg => { if (cfg.continuous) jointContinuous = cfg.continuous; })
+  .catch(() => {});
+
+// Build joint rows
+const jointsDiv = document.getElementById('joints');
+for (let i = 0; i < 6; i++) {
+  jointsDiv.innerHTML += `
+    <div class="joint-row">
+      <div class="joint-label" style="color:${JOINT_COLORS[i]}">Joint ${i+1}</div>
+      <div class="joint-bar-bg">
+        <div class="joint-center"></div>
+        <div class="joint-bar" id="bar${i}" style="width:0%"></div>
+      </div>
+      <div class="joint-value">
+        <span class="deg" id="deg${i}">0.00°</span><br>
+        <span class="rad" id="rad${i}">0.0000 rad</span>
+      </div>
+    </div>`;
+}
+
+let msgCount = 0;
+let lastRateTime = performance.now();
+let lastRate = 0;
+
+function updateUI(state) {
+  // Joints
+  for (let i = 0; i < 6; i++) {
+    const deg = state.joints[i];
+    const rad = state.joints_rad[i];
+    document.getElementById(`deg${i}`).textContent = deg.toFixed(2) + '°';
+    document.getElementById(`rad${i}`).textContent = rad.toFixed(4) + ' rad';
+
+    const bar = document.getElementById(`bar${i}`);
+    const maxDeg = jointContinuous[i] ? 360 : 180;
+    const pct = Math.min(Math.abs(deg) / maxDeg * 50, 50);
+    bar.style.width = pct + '%';
+    bar.className = 'joint-bar ' + (deg >= 0 ? 'positive' : 'negative');
+    bar.style.background = `linear-gradient(${deg >= 0 ? '90deg' : '270deg'}, ${JOINT_COLORS[i]}88, ${JOINT_COLORS[i]})`;
+  }
+
+  // Gripper
+  document.getElementById('gripperValue').textContent = state.gripper.toFixed(0);
+  document.getElementById('gripperBar').style.width = (state.gripper / 1000 * 100) + '%';
+
+  // Status
+  const statusCode = state.status;
+  const statusName = STATUS_MAP[statusCode] || `0x${statusCode.toString(16).toUpperCase()}`;
+  document.getElementById('statusValue').textContent = statusName;
+  document.getElementById('statusText').textContent = `code: ${statusCode}`;
+
+  // Rate
+  msgCount++;
+  const now = performance.now();
+  if (now - lastRateTime >= 1000) {
+    lastRate = Math.round(msgCount / ((now - lastRateTime) / 1000));
+    msgCount = 0;
+    lastRateTime = now;
+  }
+  document.getElementById('rateValue').textContent = lastRate || '--';
+}
+
+// SSE connection
+function connect() {
+  const badge = document.getElementById('connStatus');
+  const evtSource = new EventSource('/api/events');
+
+  evtSource.onopen = () => {
+    badge.textContent = 'CONNECTED';
+    badge.className = 'status-badge connected';
+  };
+
+  evtSource.onmessage = (e) => {
+    try {
+      const state = JSON.parse(e.data);
+      updateUI(state);
+    } catch (err) {}
+  };
+
+  evtSource.onerror = () => {
+    badge.textContent = 'DISCONNECTED';
+    badge.className = 'status-badge disconnected';
+    evtSource.close();
+    setTimeout(connect, 2000);
+  };
+}
+
+connect();
+</script>
+</body>
+</html>

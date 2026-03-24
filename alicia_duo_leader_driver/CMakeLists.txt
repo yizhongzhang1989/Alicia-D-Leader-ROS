@@ -25,4 +25,10 @@ install(DIRECTORY launch/
   DESTINATION share/${PROJECT_NAME}/launch
 )
 
+# 安装配置文件
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../config/
+  DESTINATION share/${PROJECT_NAME}/config
+  PATTERN "joint_config.yaml" EXCLUDE
+)
+
 ament_package()

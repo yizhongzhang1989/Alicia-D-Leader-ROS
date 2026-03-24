@@ -19,10 +19,13 @@ import serial
 import serial.tools.list_ports
 import binascii
 import math
+import shutil
 import time
 import threading
 import platform
 import os
+import yaml
+from ament_index_python.packages import get_package_share_directory
 from std_msgs.msg import Bool, Float32MultiArray, UInt8MultiArray
 from alicia_duo_leader_driver.msg import ArmJointState
 
@@ -61,6 +64,7 @@ class AliciaDriverNode(Node):
         self.declare_parameter('baudrate', 1000000)
         self.declare_parameter('debug_mode', False)
         self.declare_parameter('query_rate', 200.0)  # Hz
+        self.declare_parameter('joint_config', '')
 
         self.port_name = self.get_parameter('port').value
         self.baudrate = self.get_parameter('baudrate').value
@@ -70,6 +74,13 @@ class AliciaDriverNode(Node):
         self.get_logger().info(f'Port: {self.port_name if self.port_name else "auto-detect"}')
         self.get_logger().info(f'Baudrate: {self.baudrate}')
         self.get_logger().info(f'Query rate: {self.query_rate} Hz')
+
+        # Load joint configuration (direction, zero_offset, continuous)
+        self._load_joint_config()
+
+        # Angle unwrapping state for continuous joints
+        self._prev_raw = [None] * 6       # previous raw angle per joint
+        self._unwrap_turns = [0] * 6       # accumulated full turns
 
         # Publishers
         self.joint_state_pub = self.create_publisher(ArmJointState, '/arm_joint_state', 10)
@@ -103,6 +114,112 @@ class AliciaDriverNode(Node):
         if self.serial_port and self.serial_port.is_open:
             self.serial_port.close()
         super().destroy_node()
+
+    # ── Joint Configuration ──
+
+    def _load_joint_config(self):
+        """Load joint direction, zero offset, and continuity settings from YAML."""
+        # Defaults: no flip, no offset, no unwrapping
+        self._joint_direction = [1.0] * 6
+        self._joint_zero_offset = [0.0] * 6
+        self._joint_continuous = [False] * 6
+        self._gripper_direction = 1.0
+        self._gripper_zero_offset = 0.0
+
+        config_path = self.get_parameter('joint_config').value
+        if not config_path:
+            try:
+                pkg_share = get_package_share_directory('alicia_duo_leader_driver')
+                template_cfg = os.path.join(pkg_share, 'config', 'joint_config_template.yaml')
+
+                # Find workspace root by walking up from pkg_share looking for
+                # a directory that contains config/joint_config_template.yaml
+                ws_root = None
+                d = os.path.dirname(pkg_share)
+                for _ in range(6):
+                    d = os.path.dirname(d)
+                    if os.path.isfile(os.path.join(d, 'config', 'joint_config_template.yaml')):
+                        ws_root = d
+                        break
+
+                if ws_root:
+                    user_cfg = os.path.join(ws_root, 'config', 'joint_config.yaml')
+                    ws_template = os.path.join(ws_root, 'config', 'joint_config_template.yaml')
+                else:
+                    # Fallback: place next to installed template
+                    user_cfg = os.path.join(os.path.dirname(template_cfg), 'joint_config.yaml')
+                    ws_template = template_cfg
+
+                if os.path.isfile(user_cfg):
+                    config_path = user_cfg
+                else:
+                    # Auto-copy template to create joint_config.yaml
+                    src = ws_template if os.path.isfile(ws_template) else template_cfg
+                    if os.path.isfile(src):
+                        os.makedirs(os.path.dirname(user_cfg), exist_ok=True)
+                        shutil.copy2(src, user_cfg)
+                        self.get_logger().info(f'Created {user_cfg} from template — edit this file to configure joints')
+                        config_path = user_cfg
+                    else:
+                        config_path = template_cfg
+            except Exception:
+                self.get_logger().warn('Could not find default joint config, using identity mapping')
+                return
+
+        if not os.path.isfile(config_path):
+            self.get_logger().warn(f'Joint config not found: {config_path}, using identity mapping')
+            return
+
+        try:
+            with open(config_path, 'r') as f:
+                cfg = yaml.safe_load(f)
+
+            jc = cfg.get('joint_config', {})
+            joint_names = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
+            for i, name in enumerate(joint_names):
+                if name in jc:
+                    j = jc[name]
+                    self._joint_direction[i] = float(j.get('direction', 1.0))
+                    self._joint_zero_offset[i] = float(j.get('zero_offset', 0.0))
+                    self._joint_continuous[i] = bool(j.get('continuous', False))
+
+            if 'gripper' in jc:
+                g = jc['gripper']
+                self._gripper_direction = float(g.get('direction', 1.0))
+                self._gripper_zero_offset = float(g.get('zero_offset', 0.0))
+
+            self.get_logger().info(f'Joint config loaded from {config_path}')
+            self.get_logger().info(f'  directions: {self._joint_direction}')
+            self.get_logger().info(f'  zero_offsets: {self._joint_zero_offset}')
+            self.get_logger().info(f'  continuous: {self._joint_continuous}')
+        except Exception as e:
+            self.get_logger().error(f'Failed to load joint config: {e}')
+
+    def _apply_joint_transform(self, raw_radians):
+        """
+        Apply direction, zero offset, and angle unwrapping to raw joint angles.
+        Returns a new list of transformed angles.
+        """
+        result = [0.0] * 6
+        for i in range(6):
+            raw = raw_radians[i]
+
+            # Angle unwrapping for continuous joints
+            if self._joint_continuous[i]:
+                if self._prev_raw[i] is not None:
+                    delta = raw - self._prev_raw[i]
+                    # Detect wrap: if jump > π, it wrapped backwards; if < -π, forwards
+                    if delta > math.pi:
+                        self._unwrap_turns[i] -= 1
+                    elif delta < -math.pi:
+                        self._unwrap_turns[i] += 1
+                self._prev_raw[i] = raw
+                raw = raw + self._unwrap_turns[i] * 2.0 * math.pi
+
+            # Apply direction and zero offset
+            result[i] = self._joint_direction[i] * raw + self._joint_zero_offset[i]
+
+        return result
 
     # ── Serial Connection ──
 
@@ -340,15 +457,19 @@ class AliciaDriverNode(Node):
             return
 
         # Parse 6 joint angles (2 bytes each, little-endian)
-        joint_values = []
+        raw_joint_values = []
         for i in range(6):
             idx = i * 2
             rad = bytes_to_radians(data_bytes[idx], data_bytes[idx + 1])
-            joint_values.append(rad)
+            raw_joint_values.append(rad)
+
+        # Apply direction, zero offset, and angle unwrapping
+        joint_values = self._apply_joint_transform(raw_joint_values)
 
         # Parse gripper (2 bytes, little-endian) - raw value 0-1000
         gripper_raw = (data_bytes[12] & 0xFF) | ((data_bytes[13] & 0xFF) << 8)
         gripper_value = max(0, min(1000, gripper_raw))
+        gripper_value = self._gripper_direction * gripper_value + self._gripper_zero_offset
 
         # Parse run status
         run_status = data_bytes[14] if len(data_bytes) > 14 else 0
