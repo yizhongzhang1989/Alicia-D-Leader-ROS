@@ -7,6 +7,7 @@ import rclpy
 from rclpy.node import Node
 from ament_index_python.packages import get_package_share_directory
 from alicia_duo_leader_driver.msg import ArmJointState
+from std_msgs.msg import Bool
 
 import http.server
 import json
@@ -94,9 +95,11 @@ class DashboardNode(Node):
         self._lock = threading.Lock()
         self._sse_clients = []
         self._sse_lock = threading.Lock()
+        self._device_connected = None  # None = unknown, True/False from driver
 
         self.create_subscription(ArmJointState, '/arm_joint_state', self._cb, 10)
         self.create_subscription(ArmJointState, '/arm_joint_state_raw', self._cb_raw, 10)
+        self.create_subscription(Bool, '/alicia/device_connected', self._device_status_cb, 10)
 
         self._latest_raw = None
 
@@ -190,6 +193,13 @@ class DashboardNode(Node):
                 'gripper': round(msg.gripper, 1),
             }
 
+    def _device_status_cb(self, msg):
+        with self._lock:
+            self._device_connected = msg.data
+        # Push device status immediately via SSE (independent of joint data)
+        data_str = json.dumps({'device_connected': msg.data})
+        self._broadcast_sse(data_str)
+
     def _cb(self, msg):
         state = {
             'joints': [round(v * RAD_TO_DEG, 2) for v in [msg.joint1, msg.joint2, msg.joint3, msg.joint4, msg.joint5, msg.joint6]],
@@ -203,8 +213,13 @@ class DashboardNode(Node):
             combined = dict(state)
             if self._latest_raw:
                 combined['raw'] = self._latest_raw
+            if self._device_connected is not None:
+                combined['device_connected'] = self._device_connected
 
         data_str = json.dumps(combined)
+        self._broadcast_sse(data_str)
+
+    def _broadcast_sse(self, data_str):
         with self._sse_lock:
             dead = []
             for wf in self._sse_clients:

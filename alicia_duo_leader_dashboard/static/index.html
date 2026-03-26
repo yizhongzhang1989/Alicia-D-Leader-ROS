@@ -91,7 +91,10 @@
 
     <div id="panel" style="display:none;">
         <h2>Alicia-D Leader</h2>
-        <div><span class="status-dot disconnected" id="connDot"></span><span id="connText" style="font-size:12px;color:#78909c;">Disconnected</span></div>
+        <div style="display:flex;gap:12px;">
+            <div><span class="status-dot disconnected" id="serverDot"></span><span id="serverText" style="font-size:12px;color:#78909c;">Server</span></div>
+            <div><span class="status-dot disconnected" id="deviceDot"></span><span id="deviceText" style="font-size:12px;color:#78909c;">Device</span></div>
+        </div>
 
         <div class="section">
             <div class="section-title">Transformed Joints</div>
@@ -103,7 +106,11 @@
         </div>
         <div class="section">
             <div class="section-title">Info</div>
-            <div class="info-row"><span class="info-label">Gripper</span><span class="info-value" id="gripperVal">--</span></div>
+            <div class="joint-row">
+                <div class="joint-label" style="color:#ff9800">Grip</div>
+                <div class="joint-bar-bg"><div class="joint-bar" id="gripperBar" style="width:0%;left:0;background:#ff9800"></div></div>
+                <div class="joint-val" id="gripperVal">--</div>
+            </div>
             <div class="info-row"><span class="info-label">Status</span><span class="info-value" id="statusVal">--</span></div>
             <div class="info-row"><span class="info-label">Rate</span><span class="info-value" id="rateVal">-- Hz</span></div>
         </div>
@@ -243,6 +250,8 @@
                 rawJointRad = state.raw.joints_rad;
             }
             document.getElementById('gripperVal').textContent = state.gripper.toFixed(0);
+            const gripPct = Math.min(Math.max(state.gripper / 1000.0, 0), 1) * 100;
+            document.getElementById('gripperBar').style.width = gripPct + '%';
             const sc = state.status;
             document.getElementById('statusVal').textContent = STATUS_MAP[sc] || ('0x' + sc.toString(16));
             msgCount++;
@@ -255,12 +264,24 @@
         }
 
         function connectSSE() {
-            const dot = document.getElementById('connDot');
-            const txt = document.getElementById('connText');
+            const sDot = document.getElementById('serverDot');
+            const sTxt = document.getElementById('serverText');
+            const dDot = document.getElementById('deviceDot');
+            const dTxt = document.getElementById('deviceText');
             const src = new EventSource('/api/events');
-            src.onopen = () => { dot.className = 'status-dot connected'; txt.textContent = 'Connected'; };
-            src.onmessage = (e) => { try { onState(JSON.parse(e.data)); } catch(x){} };
-            src.onerror = () => { dot.className = 'status-dot disconnected'; txt.textContent = 'Disconnected'; src.close(); setTimeout(connectSSE, 2000); };
+            src.onopen = () => { sDot.className = 'status-dot connected'; sTxt.textContent = 'Server'; };
+            src.onmessage = (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    if (data.device_connected === true) {
+                        dDot.className = 'status-dot connected'; dTxt.textContent = 'Device';
+                    } else if (data.device_connected === false) {
+                        dDot.className = 'status-dot disconnected'; dTxt.textContent = 'Device';
+                    }
+                    if (data.joints) onState(data);
+                } catch(x){}
+            };
+            src.onerror = () => { sDot.className = 'status-dot disconnected'; sTxt.textContent = 'Server'; src.close(); setTimeout(connectSSE, 2000); };
         }
         connectSSE();
 

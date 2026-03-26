@@ -87,6 +87,7 @@ class AliciaDriverNode(Node):
         self.joint_state_raw_pub = self.create_publisher(ArmJointState, '/arm_joint_state_raw', 10)
         self.array_pub = self.create_publisher(Float32MultiArray, '/servo_states_main', 10)
         self.raw_pub = self.create_publisher(UInt8MultiArray, '/read_serial_data', 10)
+        self.device_status_pub = self.create_publisher(Bool, '/alicia/device_connected', 10)
 
         # Subscribers
         self.create_subscription(Bool, '/zero_calibrate', self.zero_calib_callback, 10)
@@ -97,14 +98,15 @@ class AliciaDriverNode(Node):
         self._rx_buffer = bytearray()
         self._lock = threading.Lock()
         self._running = True
+        self._device_connected = False
+        self._comm_running = False
 
-        # Connect
-        if not self._connect():
-            # Retry in background
-            self._reconnect_timer = self.create_timer(2.0, self._reconnect_cb)
-        else:
-            self._reconnect_timer = None
+        # Try initial connection
+        if self._connect():
             self._start_comm_thread()
+
+        # Watchdog: publishes device status at 1 Hz and auto-reconnects
+        self._watchdog_timer = self.create_timer(1.0, self._watchdog_cb)
 
         self.get_logger().info('Alicia driver node initialized')
 
@@ -283,16 +285,31 @@ class AliciaDriverNode(Node):
             self.get_logger().error(f'Connection failed: {e}')
             return False
 
-    def _reconnect_cb(self):
-        """Timer callback for reconnection attempts."""
-        if self._connect():
-            if self._reconnect_timer:
-                self._reconnect_timer.cancel()
-                self._reconnect_timer = None
-            self._start_comm_thread()
+    def _watchdog_cb(self):
+        """Publish device status at 1 Hz and auto-reconnect if disconnected."""
+        connected = self.serial_port is not None and self.serial_port.is_open
+
+        msg = Bool()
+        msg.data = connected
+        self.device_status_pub.publish(msg)
+
+        if connected != self._device_connected:
+            self._device_connected = connected
+            if connected:
+                self.get_logger().info('Device connected')
+            else:
+                self.get_logger().warn('Device disconnected')
+
+        # Auto-reconnect if disconnected and comm thread not running
+        if not connected and not self._comm_running and self._running:
+            if self._connect():
+                self._start_comm_thread()
 
     def _start_comm_thread(self):
         """Start the communication thread for query/response."""
+        if self._comm_running:
+            return
+        self._comm_running = True
         self._comm_thread = threading.Thread(target=self._comm_loop, daemon=True)
         self._comm_thread.start()
 
@@ -303,46 +320,45 @@ class AliciaDriverNode(Node):
         interval = 1.0 / self.query_rate
         self.get_logger().info(f'Communication thread started (interval={interval*1000:.1f}ms)')
 
-        while self._running and rclpy.ok():
-            try:
-                if not self.serial_port or not self.serial_port.is_open:
-                    time.sleep(0.5)
-                    continue
-
-                # Send joint+gripper query
-                self._send_raw(CMD_QUERY_JOINT)
-
-                # Read and process available frames
-                frames_read = 0
-                max_frames = 10
-                while frames_read < max_frames:
-                    frame = self._read_frame()
-                    if frame is None:
+        try:
+            while self._running and rclpy.ok():
+                try:
+                    if not self.serial_port or not self.serial_port.is_open:
                         break
-                    self._process_frame(frame)
-                    frames_read += 1
 
-                if frames_read == 0:
-                    time.sleep(interval)
-                else:
-                    # Brief sleep to allow serial buffer to fill
-                    time.sleep(max(0.001, interval - 0.002))
+                    # Send joint+gripper query
+                    self._send_raw(CMD_QUERY_JOINT)
 
-            except (OSError, serial.SerialException) as e:
-                self.get_logger().error(f'Serial error: {e}')
-                if self.serial_port:
-                    try:
-                        self.serial_port.close()
-                    except Exception:
-                        pass
-                self.serial_port = None
-                # Schedule reconnect
-                if self._running:
-                    self._reconnect_timer = self.create_timer(2.0, self._reconnect_cb)
-                break
-            except Exception as e:
-                self.get_logger().error(f'Comm loop error: {e}')
-                time.sleep(0.1)
+                    # Read and process available frames
+                    frames_read = 0
+                    max_frames = 10
+                    while frames_read < max_frames:
+                        frame = self._read_frame()
+                        if frame is None:
+                            break
+                        self._process_frame(frame)
+                        frames_read += 1
+
+                    if frames_read == 0:
+                        time.sleep(interval)
+                    else:
+                        # Brief sleep to allow serial buffer to fill
+                        time.sleep(max(0.001, interval - 0.002))
+
+                except (OSError, serial.SerialException) as e:
+                    self.get_logger().error(f'Serial error: {e}')
+                    if self.serial_port:
+                        try:
+                            self.serial_port.close()
+                        except Exception:
+                            pass
+                    self.serial_port = None
+                    break  # watchdog timer will handle reconnect
+                except Exception as e:
+                    self.get_logger().error(f'Comm loop error: {e}')
+                    time.sleep(0.1)
+        finally:
+            self._comm_running = False
 
     # ── Serial Read/Write ──
 
@@ -357,6 +373,8 @@ class AliciaDriverNode(Node):
                 hex_str = ' '.join(f'{b:02X}' for b in data)
                 self.get_logger().debug(f'TX: {hex_str}')
             return True
+        except (OSError, serial.SerialException):
+            raise  # let comm loop handle disconnect
         except Exception as e:
             self.get_logger().error(f'Send error: {e}')
             return False
@@ -372,19 +390,13 @@ class AliciaDriverNode(Node):
             if not self.serial_port or not self.serial_port.is_open:
                 return None
 
-            try:
-                available = self.serial_port.in_waiting
-            except OSError:
-                return None
+            available = self.serial_port.in_waiting
 
             if available == 0:
                 return None
 
             read_size = min(available, 80)
-            try:
-                self._rx_buffer += self.serial_port.read(read_size)
-            except OSError:
-                return None
+            self._rx_buffer += self.serial_port.read(read_size)
 
             while len(self._rx_buffer) >= DEFAULT_OVERHEAD:
                 # Discard buffer if too large (corrupted)
@@ -433,6 +445,8 @@ class AliciaDriverNode(Node):
 
             return None
 
+        except (OSError, serial.SerialException):
+            raise  # let comm loop handle disconnect
         except Exception as e:
             self.get_logger().error(f'Read error: {e}')
             return None
