@@ -77,6 +77,21 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         else:
             super().do_GET()
 
+    def do_POST(self):
+        length = int(self.headers.get('Content-Length', 0))
+        body = json.loads(self.rfile.read(length)) if length else {}
+        if self.path == '/api/publish_enable':
+            enabled = bool(body.get('enabled', True))
+            self._dashboard.set_publish_enabled(enabled)
+            resp = json.dumps({'success': True, 'enabled': enabled}).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(resp)))
+            self.end_headers()
+            self.wfile.write(resp)
+        else:
+            self.send_error(404)
+
     def log_message(self, format, *args):
         if len(args) >= 2 and '404' in str(args[1]):
             super().log_message(format, *args)
@@ -100,6 +115,10 @@ class DashboardNode(Node):
         self.create_subscription(ArmJointState, '/arm_joint_state', self._cb, 10)
         self.create_subscription(ArmJointState, '/arm_joint_state_raw', self._cb_raw, 10)
         self.create_subscription(Bool, '/alicia/device_connected', self._device_status_cb, 10)
+
+        # Publisher for enabling/disabling arm_joint_state publishing
+        self._publish_enable_pub = self.create_publisher(Bool, '/alicia/publish_enable', 10)
+        self._publish_enabled = True
 
         self._latest_raw = None
 
@@ -243,6 +262,13 @@ class DashboardNode(Node):
         with self._sse_lock:
             if wfile in self._sse_clients:
                 self._sse_clients.remove(wfile)
+
+    def set_publish_enabled(self, enabled):
+        self._publish_enabled = enabled
+        msg = Bool()
+        msg.data = enabled
+        self._publish_enable_pub.publish(msg)
+        self.get_logger().info(f'Publish /arm_joint_state: {"enabled" if enabled else "disabled"}')
 
     def destroy_node(self):
         self._httpd.shutdown()

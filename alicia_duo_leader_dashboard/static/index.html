@@ -91,9 +91,10 @@
 
     <div id="panel" style="display:none;">
         <h2>Alicia-D Leader</h2>
-        <div style="display:flex;gap:12px;">
+        <div style="display:flex;gap:12px;align-items:center;">
             <div><span class="status-dot disconnected" id="serverDot"></span><span id="serverText" style="font-size:12px;color:#78909c;">Server</span></div>
             <div><span class="status-dot disconnected" id="deviceDot"></span><span id="deviceText" style="font-size:12px;color:#78909c;">Device</span></div>
+            <button id="btnPublish" onclick="togglePublish()" style="margin-left:auto;font-size:10px;padding:3px 10px;background:#66bb6a;color:#000;border:none;border-radius:3px;cursor:pointer;">Publishing</button>
         </div>
 
         <div class="section">
@@ -284,6 +285,22 @@
             src.onerror = () => { sDot.className = 'status-dot disconnected'; sTxt.textContent = 'Server'; src.close(); setTimeout(connectSSE, 2000); };
         }
         connectSSE();
+
+        // Publish enable/disable toggle
+        let publishEnabled = true;
+        window.togglePublish = function() {
+            publishEnabled = !publishEnabled;
+            const btn = document.getElementById('btnPublish');
+            fetch('/api/publish_enable', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({enabled: publishEnabled})
+            }).then(r => r.json()).then(d => {
+                if (d.success) {
+                    btn.textContent = d.enabled ? 'Publishing' : 'Muted';
+                    btn.style.background = d.enabled ? '#66bb6a' : '#ef5350';
+                }
+            }).catch(() => { publishEnabled = !publishEnabled; });
+        };
 
         // ── Render loop ──
         (function animate() {

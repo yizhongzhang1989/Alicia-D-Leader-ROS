@@ -92,6 +92,10 @@ class AliciaDriverNode(Node):
         # Subscribers
         self.create_subscription(Bool, '/zero_calibrate', self.zero_calib_callback, 10)
         self.create_subscription(Bool, '/torque_enable', self.torque_callback, 10)
+        self.create_subscription(Bool, '/alicia/publish_enable', self._publish_enable_cb, 10)
+
+        # Publishing control
+        self._publish_enabled = True
 
         # Serial state
         self.serial_port = None
@@ -528,7 +532,8 @@ class AliciaDriverNode(Node):
         msg.gripper = float(gripper_value)
         msg.but1 = run_status
         msg.but2 = 0
-        self.joint_state_pub.publish(msg)
+        if self._publish_enabled:
+            self.joint_state_pub.publish(msg)
 
         # Publish backward-compatible array
         compat_msg = Float32MultiArray()
@@ -573,6 +578,11 @@ class AliciaDriverNode(Node):
         else:
             self.get_logger().info('Disabling torque')
             self._send_raw(CMD_TORQUE_OFF)
+
+    def _publish_enable_cb(self, msg):
+        """Enable/disable publishing /arm_joint_state."""
+        self._publish_enabled = msg.data
+        self.get_logger().info(f'Publish /arm_joint_state: {"enabled" if msg.data else "disabled"}')
 
 
 def main(args=None):
