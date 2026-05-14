@@ -501,8 +501,37 @@ class AliciaDriverNode(Node):
         gripper_value = max(0, min(1000, gripper_raw_value))
         gripper_value = self._gripper_direction * gripper_value + self._gripper_zero_offset
 
-        # Parse run status
-        run_status = data_bytes[14] if len(data_bytes) > 14 else 0
+        # Parse the leader's run-status byte. The lower nibble carries a
+        # physical-button bitfield (bit 0 = lock, bit 4 = sync) and the
+        # upper bits carry an optional overheat overlay. The known
+        # overheat codes (per the Alicia-D SDK ``data_parser.py``) are
+        # 0xE1 (overheat) and 0xE2 (overheat_protect). We classify the
+        # overlay by inspecting the upper bits only -- the lock bit
+        # (bit 0) is masked off so but1 stays consistent.
+        run_status_byte = data_bytes[14] if len(data_bytes) > 14 else 0
+        lock_state = run_status_byte & 0x01
+        sync_state = (run_status_byte >> 4) & 0x01
+
+        overheat_mask = run_status_byte & 0xFE  # drop the lock bit
+        if overheat_mask == 0xE2:
+            overheat_state = 2  # overheat_protect
+        elif overheat_mask == 0xE0:
+            overheat_state = 1  # overheat
+        else:
+            overheat_state = 0  # normal
+
+        # Warn on transitions into / out of fault states.
+        prev = getattr(self, '_last_overheat', None)
+        if overheat_state != prev:
+            self._last_overheat = overheat_state
+            if overheat_state == 1:
+                self.get_logger().warn(
+                    'Leader overheat=1 \u2014 servos still active but hot')
+            elif overheat_state == 2:
+                self.get_logger().warn(
+                    'Leader overheat=2 (overheat_protect) \u2014 torque cut by firmware')
+            elif prev not in (None, 0):
+                self.get_logger().info('Leader overheat cleared')
 
         now_stamp = self.get_clock().now().to_msg()
 
@@ -516,8 +545,9 @@ class AliciaDriverNode(Node):
         raw_msg.joint5 = raw_joint_values[4]
         raw_msg.joint6 = raw_joint_values[5]
         raw_msg.gripper = float(max(0, min(1000, gripper_raw_value)))
-        raw_msg.but1 = run_status
-        raw_msg.but2 = 0
+        raw_msg.but1 = lock_state
+        raw_msg.but2 = sync_state
+        raw_msg.overheat = overheat_state
         self.joint_state_raw_pub.publish(raw_msg)
 
         # Publish transformed joint state — for robot control
@@ -530,8 +560,9 @@ class AliciaDriverNode(Node):
         msg.joint5 = joint_values[4]
         msg.joint6 = joint_values[5]
         msg.gripper = float(gripper_value)
-        msg.but1 = run_status
-        msg.but2 = 0
+        msg.but1 = lock_state
+        msg.but2 = sync_state
+        msg.overheat = overheat_state
         if self._publish_enabled:
             self.joint_state_pub.publish(msg)
 

@@ -89,17 +89,41 @@ ros2 run alicia_duo_leader_driver arm_read_demo.py
 
 ```
 std_msgs/Header header
-float32 joint1    # radians, range [-π, π]
+float32 joint1      # radians, range [-π, π]
 float32 joint2
 float32 joint3
 float32 joint4
 float32 joint5
 float32 joint6
-int32   but1      # run status (0=idle, 1=locked, 0x10=sync, etc.)
-int32   but2      # reserved
-float32 gripper   # raw value 0–1000
-float32 time      # reserved
+int32   but1        # lock state (0 = released, 1 = locked)
+int32   but2        # sync state (0 = unsync,   1 = sync)
+uint8   overheat    # 0 = normal, 1 = overheat, 2 = overheat_protect
+float32 gripper     # raw value 0–1000
+float32 time        # reserved
 ```
+
+### Field semantics
+
+The byte at offset 14 of the joint-data response (`CMD=0x06, FUNC=0x00`)
+encodes two independent things:
+
+* **Buttons** (`but1`, `but2`) — derived from the lower nibble of the
+  raw byte and always valid, even during a thermal fault:
+  * bit 0 (`0x01`) → `but1` (lock)
+  * bit 4 (`0x10`) → `but2` (sync)
+* **Overheat overlay** (`overheat`) — derived from the upper bits only;
+  the lock bit (bit 0) is masked off so it never affects classification.
+
+| `overheat` | Raw byte (lock bit ignored) | Label              | Meaning |
+|------------|-----------------------------|--------------------|---------|
+| `0`        | anything not below          | `normal`           | No thermal warning. |
+| `1`        | `0xE0` / `0xE1`             | `overheat`         | Servos still active but hot. |
+| `2`        | `0xE2` / `0xE3`             | `overheat_protect` | Thermal protection engaged; firmware has cut torque. |
+
+The two overheat codes correspond to the `0xE1` and `0xE2` values
+documented in the official
+[Alicia-D SDK](https://github.com/Synria-Robotics/Alicia-D-SDK)
+(`alicia_d_sdk/hardware/data_parser.py`).
 
 ## Launch Parameters
 
@@ -186,7 +210,7 @@ The `alicia_duo_leader_dashboard` package provides a real-time web dashboard wit
 - **3D URDF viewer** — interactive 3D model driven by raw joint angles, with orbit/zoom controls
 - **Transformed joint bars** — shows joint angles after direction, offset, and unwrap transforms (for robot control)
 - **Raw joint bars** — shows raw sensor angles with URDF joint limit ranges
-- **Gripper value**, **run status**, and **update rate** display
+- **Gripper value**, **lock/sync state**, and **update rate** display
 - Real-time updates via Server-Sent Events (~200 Hz)
 
 ### Launch the dashboard

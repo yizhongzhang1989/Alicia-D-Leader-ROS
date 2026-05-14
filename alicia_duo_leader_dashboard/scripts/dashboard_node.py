@@ -28,6 +28,13 @@ mimetypes.add_type("application/javascript", ".js")
 
 RAD_TO_DEG = 180.0 / math.pi
 
+# Overheat enum (matches ArmJointState.overheat).
+OVERHEAT_MAP = {
+    0: 'normal',
+    1: 'overheat',
+    2: 'overheat_protect',
+}
+
 
 class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     """Serves index.html at / and handles API endpoints. Static files from CWD."""
@@ -220,11 +227,19 @@ class DashboardNode(Node):
         self._broadcast_sse(data_str)
 
     def _cb(self, msg):
+        overheat = int(msg.overheat)
         state = {
             'joints': [round(v * RAD_TO_DEG, 2) for v in [msg.joint1, msg.joint2, msg.joint3, msg.joint4, msg.joint5, msg.joint6]],
             'joints_rad': [round(v, 4) for v in [msg.joint1, msg.joint2, msg.joint3, msg.joint4, msg.joint5, msg.joint6]],
             'gripper': round(msg.gripper, 1),
-            'status': msg.but1,
+            # ArmJointState semantics:
+            #   but1     = lock state (0 released, 1 locked)
+            #   but2     = sync state (0 unsync,   1 sync)
+            #   overheat = 0 normal / 1 overheat / 2 overheat_protect
+            'lock': int(msg.but1),
+            'sync': int(msg.but2),
+            'overheat': overheat,
+            'overheat_text': OVERHEAT_MAP.get(overheat, f'unknown({overheat})'),
             'timestamp': msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9,
         }
         with self._lock:

@@ -64,6 +64,7 @@ class ServoStatesNode(Node):
         self.gripper_angle_rad = 0.0
         self.but1 = 0
         self.but2 = 0
+        self.overheat = 0
 
         # 关节映射
         self.servo_to_joint_map = {
@@ -153,6 +154,7 @@ class ServoStatesNode(Node):
             joint_state.gripper = self.gripper_angle_rad
             joint_state.but1 = self.but1
             joint_state.but2 = self.but2
+            joint_state.overheat = self.overheat
 
             self.joint_state_pub.publish(joint_state)
 

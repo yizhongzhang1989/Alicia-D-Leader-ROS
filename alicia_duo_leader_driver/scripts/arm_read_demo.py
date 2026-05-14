@@ -30,8 +30,8 @@ class ArmStateReaderDemo(Node):
         self.get_logger().info(f"  Joint 5: {msg.joint5 * RAD_TO_DEG:.2f} deg ({msg.joint5:.4f} rad)")
         self.get_logger().info(f"  Joint 6: {msg.joint6 * RAD_TO_DEG:.2f} deg ({msg.joint6:.4f} rad)")
         self.get_logger().info(f"  Gripper: {msg.gripper * RAD_TO_DEG:.2f} deg ({msg.gripper:.4f} rad)")
-        self.get_logger().info(f"  Button 1: {msg.but1}")
-        self.get_logger().info(f"  Button 2: {msg.but2}")
+        self.get_logger().info(f"  Lock (but1):  {msg.but1}")
+        self.get_logger().info(f"  Sync (but2):  {msg.but2}")
         self.get_logger().info("---------------------------------")
 
 

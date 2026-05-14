@@ -112,7 +112,9 @@
                 <div class="joint-bar-bg"><div class="joint-bar" id="gripperBar" style="width:0%;left:0;background:#ff9800"></div></div>
                 <div class="joint-val" id="gripperVal">--</div>
             </div>
-            <div class="info-row"><span class="info-label">Status</span><span class="info-value" id="statusVal">--</span></div>
+            <div class="info-row"><span class="info-label">Lock</span><span class="info-value" id="lockVal">--</span></div>
+            <div class="info-row"><span class="info-label">Sync</span><span class="info-value" id="syncVal">--</span></div>
+            <div class="info-row"><span class="info-label">Overheat</span><span class="info-value" id="statusVal">--</span></div>
             <div class="info-row"><span class="info-label">Rate</span><span class="info-value" id="rateVal">-- Hz</span></div>
         </div>
     </div>
@@ -125,7 +127,9 @@
         const URDF_PATH = 'robot/model.urdf';
         const JOINT_NAMES = ['joint1','joint2','joint3','joint4','joint5','joint6'];
         const COLORS = ['#42a5f5','#66bb6a','#ffa726','#ef5350','#ab47bc','#26c6da'];
-        const STATUS_MAP = {0:'idle',1:'locked',16:'sync',17:'sync_locked',225:'overheat',226:'overheat_protect'};
+        // Latched physical-button states reported by the leader.
+        // but1 (lock):  0 = released, 1 = locked
+        // but2 (sync):  0 = unsync,   1 = sync
 
         // ── Build UI ──
         function buildJointRows(containerId, prefix) {
@@ -253,8 +257,19 @@
             document.getElementById('gripperVal').textContent = state.gripper.toFixed(0);
             const gripPct = Math.min(Math.max(state.gripper / 1000.0, 0), 1) * 100;
             document.getElementById('gripperBar').style.width = gripPct + '%';
-            const sc = state.status;
-            document.getElementById('statusVal').textContent = STATUS_MAP[sc] || ('0x' + sc.toString(16));
+            const lockEl = document.getElementById('lockVal');
+            const syncEl = document.getElementById('syncVal');
+            lockEl.textContent = state.lock ? 'LOCK' : 'RELEASE';
+            lockEl.style.color = state.lock ? '#ffa726' : '#78909c';
+            syncEl.textContent = state.sync ? 'SYNC' : 'UNSYNC';
+            syncEl.style.color = state.sync ? '#66bb6a' : '#78909c';
+            const statusEl = document.getElementById('statusVal');
+            if (typeof state.overheat === 'number') {
+                const oh = state.overheat;
+                statusEl.textContent = state.overheat_text || String(oh);
+                // Red for any non-normal state; muted grey for normal.
+                statusEl.style.color = (oh === 0) ? '#b0bec5' : '#ef5350';
+            }
             msgCount++;
             const now = performance.now();
             if (now - lastRateTime >= 1000) {
