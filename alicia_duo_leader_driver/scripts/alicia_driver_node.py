@@ -503,35 +503,40 @@ class AliciaDriverNode(Node):
 
         # Parse the leader's run-status byte. The lower nibble carries a
         # physical-button bitfield (bit 0 = lock, bit 4 = sync) and the
-        # upper bits carry an optional overheat overlay. The known
-        # overheat codes (per the Alicia-D SDK ``data_parser.py``) are
-        # 0xE1 (overheat) and 0xE2 (overheat_protect). We classify the
-        # overlay by inspecting the upper bits only -- the lock bit
-        # (bit 0) is masked off so but1 stays consistent.
+        # upper bits carry an optional overheat overlay. The known SDK
+        # codes (alicia_d_sdk/hardware/data_parser.py) are:
+        #   0x00, 0x01, 0x10, 0x11  -> healthy buttons
+        #   0xE1                    -> overheat
+        #   0xE2                    -> overheat_protect
+        # During overheat the lower bits no longer encode the buttons,
+        # so we ONLY refresh lock/sync from a healthy byte. Otherwise we
+        # hold the last known healthy values, which keeps but1/but2
+        # stable while the leader is in a thermal state instead of
+        # flickering as the upper-nibble overlay flips on and off.
         run_status_byte = data_bytes[14] if len(data_bytes) > 14 else 0
-        lock_state = run_status_byte & 0x01
-        sync_state = (run_status_byte >> 4) & 0x01
 
-        overheat_mask = run_status_byte & 0xFE  # drop the lock bit
-        if overheat_mask == 0xE2:
+        if run_status_byte in (0x00, 0x01, 0x10, 0x11):
+            lock_state = run_status_byte & 0x01
+            sync_state = (run_status_byte >> 4) & 0x01
+            overheat_state = 0
+            self._last_lock_state = lock_state
+            self._last_sync_state = sync_state
+        elif (run_status_byte & 0xFE) == 0xE2:
             overheat_state = 2  # overheat_protect
-        elif overheat_mask == 0xE0:
+            lock_state = getattr(self, '_last_lock_state', 0)
+            sync_state = getattr(self, '_last_sync_state', 0)
+        elif (run_status_byte & 0xFE) == 0xE0:
             overheat_state = 1  # overheat
+            lock_state = getattr(self, '_last_lock_state', 0)
+            sync_state = getattr(self, '_last_sync_state', 0)
         else:
-            overheat_state = 0  # normal
-
-        # Warn on transitions into / out of fault states.
-        prev = getattr(self, '_last_overheat', None)
-        if overheat_state != prev:
-            self._last_overheat = overheat_state
-            if overheat_state == 1:
-                self.get_logger().warn(
-                    'Leader overheat=1 \u2014 servos still active but hot')
-            elif overheat_state == 2:
-                self.get_logger().warn(
-                    'Leader overheat=2 (overheat_protect) \u2014 torque cut by firmware')
-            elif prev not in (None, 0):
-                self.get_logger().info('Leader overheat cleared')
+            # Unknown / undocumented byte: hold every value at its last
+            # observation and stay silent. The dashboard reflects this
+            # via the unchanged display.
+            overheat_state = getattr(self, '_last_overheat', 0)
+            lock_state = getattr(self, '_last_lock_state', 0)
+            sync_state = getattr(self, '_last_sync_state', 0)
+        self._last_overheat = overheat_state
 
         now_stamp = self.get_clock().now().to_msg()
 
